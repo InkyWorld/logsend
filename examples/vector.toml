@@ -1,0 +1,45 @@
+# Vector configuration for receiving logs from LogSend
+# Run with: vector --config vector.toml
+
+[sources.http_logs]
+type = "http_server"
+address = "0.0.0.0:8080"
+encoding = "json"
+headers = ["Content-Type"]
+
+# Optional: Parse JSON from message field
+[transforms.parse_json]
+type = "remap"
+inputs = ["http_logs"]
+source = '''
+. = parse_json!(string!(.message)) ?? .
+'''
+
+# Output to console for debugging
+[sinks.console]
+type = "console"
+inputs = ["parse_json"]
+encoding.codec = "json"
+
+# Output to file
+[sinks.file]
+type = "file"
+inputs = ["parse_json"]
+path = "/var/log/vector/app-%Y-%m-%d.json"
+encoding.codec = "json"
+
+# Optional: Send to Elasticsearch
+# [sinks.elasticsearch]
+# type = "elasticsearch"
+# inputs = ["parse_json"]
+# endpoints = ["http://localhost:9200"]
+# index = "logs-%Y-%m-%d"
+# bulk.index = "logs"
+
+# Optional: Send to Loki
+# [sinks.loki]
+# type = "loki"
+# inputs = ["parse_json"]
+# endpoint = "http://localhost:3100"
+# labels = { app = "{{ app }}", level = "{{ level }}" }
+# encoding.codec = "json"
