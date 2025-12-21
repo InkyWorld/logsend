@@ -7,11 +7,9 @@ name = "logsend"
 version = "0.1.0"
 description = "Python logger with Vector HTTP sink and disk storage"
 readme = "README.md"
-license = {text = "MIT"}
+license = { text = "MIT" }
 requires-python = ">=3.8"
-authors = [
-    {name = "Alex"}
-]
+authors = [{ name = "Alex" }]
 keywords = ["logging", "vector", "http", "async"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -24,15 +22,10 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
-dependencies = [
-    "requests>=2.25.0",
-]
+dependencies = ["requests>=2.25.0"]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-]
+dev = ["pytest>=7.0.0", "pytest-asyncio>=0.21.0"]
 
 [project.urls]
 Homepage = "https://github.com/ink404dot/logsend"
