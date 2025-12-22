@@ -2,7 +2,7 @@
 HTTP sender for Vector.
 """
 
-import time
+
 from typing import Dict, List, Optional
 
 import requests
@@ -53,12 +53,13 @@ class LogSender:
         if not messages:
             return True
 
-        # Vector expects newline-delimited JSON
+        # Vector expects newline-delimited JSON as bytes
         payload = "\n".join(messages)
+        payload_bytes = payload.encode("utf-8")
         try:
             response = self._session.post(
                 self.vector_url,
-                data=payload.encode("utf-8"),
+                data=payload_bytes,
                 timeout=self.timeout,
             )
 
