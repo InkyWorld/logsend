@@ -81,15 +81,16 @@ logger.flush()
 
 ### Initialization Parameters
 
-| Parameter      | Type     | Description                    | Default         |
-|----------------|----------|--------------------------------|-----------------|
-| `vector_url`   |   str    | Vector server URL              |         -       |
-| `project`      |   str    | Project name (required)        |         -       |
-| `table`        |   str    | Table name (required)          |         -       |
-| `db_path`      |   str    | Path to database file          | `./logs.db`     |
-| `batch_size`   |   int    | Batch size for sending         | `1000`          |
-| `level`        | LogLevel | Logging level                  | `LogLevel.INFO` |
-| `extra_fields` |   dict   | Additional fields for all logs | `{}`            |
+| Parameter      | Type     | Description                              | Default         |
+|----------------|----------|------------------------------------------|-----------------|
+| `vector_url`   |   str    | Vector server URL                        |         -       |
+| `project`      |   str    | Project name (required)                  |         -       |
+| `table`        |   str    | Table name (required)                    |         -       |
+| `log_dir`      |   Path   | Directory for logger_buffer folder       |         -       |
+| `db_path`      |   str    | Path to database file                    | `./logs/queue.db` |
+| `batch_size`   |   int    | Batch size for sending                   | `5000`          |
+| `level`        | LogLevel | Logging level                            | `LogLevel.DEBUG`|
+| `extra_fields` |   dict   | Additional fields for all logs           | `{}`            |
 
 ## Examples
 

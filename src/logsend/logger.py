@@ -70,6 +70,7 @@ class LogSend:
         vector_url: str,
         project: str,
         table: str,
+        log_dir: Path,
         db_path: str = "./logs/queue.db",
         batch_size: int = 5000,
         flush_interval: float = 30.0,
@@ -106,8 +107,7 @@ class LogSend:
         self.extra_fields = extra_fields or {}
 
         # Create logger_buffer directory in project root
-        project_root = Path(__file__).resolve().parent.parent.parent
-        logger_buffer_dir = project_root / "logger_buffer"
+        logger_buffer_dir = log_dir / "logger_buffer"
         logger_buffer_dir.mkdir(parents=True, exist_ok=True)
 
         # SQLite queue for persistence
