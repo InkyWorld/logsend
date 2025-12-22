@@ -1,11 +1,8 @@
 """
-LogSend - Python logger with Vector HTTP sink and SQLite storage.
+Python logger with SQLite storage for sending logs to Vector via HTTP.
 """
 
-from .disk_queue import DiskQueue
-from .handler import VectorHandler
 from .logger import LogLevel, LogSend
-from .sender import LogSender
 
-__version__ = "0.1.0"
-__all__ = ["LogSend", "LogLevel", "VectorHandler", "LogSender", "DiskQueue"]
+__version__ = "0.2.0"
+__all__ = ["LogSend", "LogLevel"]

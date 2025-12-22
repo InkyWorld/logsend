@@ -12,8 +12,7 @@ def main():
         project="my-project",  # Required!
         table="application_logs",  # Required!
         db_path="./logs/queue.db",
-        batch_size=10,  # Send after 10 logs
-        flush_interval=5.0,  # Or every 5 seconds
+        batch_size=1000,  # Send after 1000 logs or 50 MB
         level=LogLevel.DEBUG,
         extra_fields={"environment": "development", "version": "1.0.0"},
     )

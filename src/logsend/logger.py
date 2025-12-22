@@ -4,13 +4,28 @@ Main logger class for LogSend.
 
 import json
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TypeAlias, Union
 
 from .disk_queue import DiskQueue
 from .sender import LogSender
+
+# Maximum batch size: 50 MB
+MAX_BATCH_SIZE_BYTES = 5 * 1024 * 1024
+
+JSONValue: TypeAlias = Union[
+    str,
+    int,
+    float,
+    bool,
+    None,
+    Dict[str, "JSONValue"],
+    List["JSONValue"],
+]
+
+JSONObject: TypeAlias = Dict[str, JSONValue]
 
 
 class LogLevel(IntEnum):
@@ -39,8 +54,8 @@ class LogSend:
             project="my-project",
             table="app_logs",
             db_path="./logs/queue.db",
-            batch_size=100,
-            flush_interval=5.0,
+            batch_size=5000,  # Send after 5000 logs or 5 MB
+            flush_interval=30.0,
         )
 
         logger.info("Application started")
@@ -56,10 +71,8 @@ class LogSend:
         project: str,
         table: str,
         db_path: str = "./logs/queue.db",
-        batch_size: int = 100,
-        flush_interval: float = 5.0,
-        max_retries: int = 3,
-        retry_delay: float = 1.0,
+        batch_size: int = 5000,
+        flush_interval: float = 30.0,
         level: LogLevel = LogLevel.DEBUG,
         extra_fields: Optional[Dict[str, Any]] = None,
     ):
@@ -71,10 +84,8 @@ class LogSend:
             project: Project name (required, included in every log)
             table: Table name (required, included in every log)
             db_path: Path to SQLite database file for queue storage
-            batch_size: Number of logs to buffer before sending
+            batch_size: Maximum number of logs to send per batch (default: 5000)
             flush_interval: Seconds between automatic flushes
-            max_retries: Maximum retry attempts for failed sends
-            retry_delay: Delay between retries in seconds
             level: Minimum log level to process
             extra_fields: Extra fields to include in every log entry
         """
@@ -82,6 +93,8 @@ class LogSend:
             raise ValueError("project is required")
         if not table:
             raise ValueError("table is required")
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
 
         self.vector_url = vector_url
         self.project = project
@@ -89,27 +102,20 @@ class LogSend:
         self.db_path = db_path
         self.batch_size = batch_size
         self.flush_interval = flush_interval
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
         self.level = level
         self.extra_fields = extra_fields or {}
 
-        # Create directory for database
-        db_dir = Path(db_path).parent
-        db_dir.mkdir(parents=True, exist_ok=True)
+        # Create logger_buffer directory in project root
+        project_root = Path(__file__).resolve().parent.parent.parent
+        logger_buffer_dir = project_root / "logger_buffer"
+        logger_buffer_dir.mkdir(parents=True, exist_ok=True)
 
         # SQLite queue for persistence
-        self._queue = DiskQueue(db_path)
-
-        # In-memory buffer for batching
-        self._buffer: List[str] = []
-        self._buffer_lock = threading.Lock()
+        self._queue = DiskQueue(str(logger_buffer_dir / "queue.db"))
 
         # HTTP sender
         self._sender = LogSender(
             vector_url=vector_url,
-            max_retries=max_retries,
-            retry_delay=retry_delay,
         )
 
         # Flush timer thread
@@ -121,20 +127,20 @@ class LogSend:
 
     def _create_log_entry(
         self,
-        level: LogLevel,
+        level: LogLevel | None,
         message: str,
         extra: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Create a log entry dictionary."""
         entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "level": level.name,
-            "level_num": int(level),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "message": message,
             "project": self.project,
             "table": self.table,
             **self.extra_fields,
         }
+        if level is not None:
+            entry["level"] = level.name
 
         if extra:
             entry["extra"] = extra
@@ -143,45 +149,65 @@ class LogSend:
 
     def _log(
         self,
-        level: LogLevel,
-        message: str,
+        message: Union[str, JSONObject],
+        level: Optional[LogLevel] = None,
         extra: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Internal logging method."""
-        if level < self.level:
+        if level is not None and level < self.level:
             return
 
-        entry = self._create_log_entry(level, message, extra)
+        if isinstance(message, str):
+            entry = self._create_log_entry(level, message, extra)
+        else:
+            # message is a dict (JSONObject)
+            entry = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                **message,
+                "project": self.project,
+                "table": self.table,
+                **self.extra_fields,
+            }
+            if level is not None:
+                entry["level"] = level.name
+            if extra:
+                entry["extra"] = extra
+
         message_json = json.dumps(entry, ensure_ascii=False)
 
-        # Add to buffer
-        with self._buffer_lock:
-            self._buffer.append(message_json)
-
-            # Flush if buffer is full
-            if len(self._buffer) >= self.batch_size:
-                self._flush_buffer()
+        # Add directly to queue
+        self._queue.enqueue(message_json)
 
     def _flush_buffer(self) -> None:
-        """Flush the in-memory buffer to queue and try to send."""
-        with self._buffer_lock:
-            if not self._buffer:
-                return
-
-            # Move buffer to queue
-            self._queue.enqueue_batch(self._buffer)
-            self._buffer.clear()
-
+        """Flush logs from queue and try to send."""
         # Try to send from queue in background
         threading.Thread(target=self._send_from_queue, daemon=True).start()
 
     def _send_from_queue(self) -> None:
         """Send logs from queue to Vector."""
         while True:
-            batch = self._queue.dequeue_batch(self.batch_size)
+            # Get a batch, but ensure it doesn't exceed 50 MB
+            batch = []
+            batch_size_bytes = 0
+
+            # Peek at messages and build batch respecting size limit
+            remaining = self._queue.peek_batch(self.batch_size)
+            for msg in remaining:
+                msg_bytes = len(msg.encode("utf-8"))
+                if (
+                    batch_size_bytes + msg_bytes > MAX_BATCH_SIZE_BYTES
+                    and batch
+                ):
+                    # Batch is full, send what we have
+                    break
+                batch.append(msg)
+                batch_size_bytes += msg_bytes
+
             if not batch:
                 break
 
+            # Remove from queue only after successful send
+            self._queue.dequeue_batch(len(batch))
             success = self._sender.send_batch(batch)
             if not success:
                 # Put back failed messages
@@ -199,40 +225,31 @@ class LogSend:
         self, message: str, extra: Optional[Dict[str, Any]] = None
     ) -> None:
         """Log a debug message."""
-        self._log(LogLevel.DEBUG, message, extra)
+        self._log(message, LogLevel.DEBUG, extra)
 
     def info(
         self, message: str, extra: Optional[Dict[str, Any]] = None
     ) -> None:
         """Log an info message."""
-        self._log(LogLevel.INFO, message, extra)
+        self._log(message, LogLevel.INFO, extra)
 
     def warning(
         self, message: str, extra: Optional[Dict[str, Any]] = None
     ) -> None:
         """Log a warning message."""
-        self._log(LogLevel.WARNING, message, extra)
+        self._log(message, LogLevel.WARNING, extra)
 
     def error(
         self, message: str, extra: Optional[Dict[str, Any]] = None
     ) -> None:
         """Log an error message."""
-        self._log(LogLevel.ERROR, message, extra)
+        self._log(message, LogLevel.ERROR, extra)
 
     def critical(
         self, message: str, extra: Optional[Dict[str, Any]] = None
     ) -> None:
         """Log a critical message."""
-        self._log(LogLevel.CRITICAL, message, extra)
-
-    def log(
-        self,
-        level: LogLevel,
-        message: str,
-        extra: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Log a message with specified level."""
-        self._log(level, message, extra)
+        self._log(message, LogLevel.CRITICAL, extra)
 
     def flush(self) -> None:
         """Manually flush the buffer and send logs."""
@@ -240,19 +257,18 @@ class LogSend:
 
     def pending_count(self) -> int:
         """Get the number of pending logs in queue."""
-        with self._buffer_lock:
-            return len(self._buffer) + self._queue.size()
+        return self._queue.size()
+
+    def json(
+        self, json_obj: JSONObject, level: Optional[LogLevel] = None
+    ) -> None:
+        """Log a JSON object."""
+        self._log(json_obj, level)
 
     def close(self) -> None:
         """Close the logger and flush remaining logs."""
         self._stop_event.set()
         self._flush_thread.join(timeout=2.0)
-
-        # Final flush
-        with self._buffer_lock:
-            if self._buffer:
-                self._queue.enqueue_batch(self._buffer)
-                self._buffer.clear()
 
         # Try to send remaining logs
         self._send_from_queue()

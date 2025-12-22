@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "logsend"
-version = "0.1.0"
-description = "Python logger with Vector HTTP sink and disk storage"
+version = "0.2.0"
+description = "Python logger with SQLite storage for sending logs to Vector via HTTP."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.8"

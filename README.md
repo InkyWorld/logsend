@@ -1,200 +1,163 @@
 # LogSend
 
-Python logger для отправки логов в [Vector](https://vector.dev/) через HTTP с хранением в SQLite.
+A Python logger with SQLite storage for sending logs to Vector via HTTP.
 
-## Особенности
+## Description
 
-- 📤 Отправка логов в Vector через HTTP
-- 💾 Хранение логов в SQLite (надёжная очередь)
-- ⏱️ Отправка в фоне по таймеру или по количеству
-- 🔄 Автоматические retry при ошибках
-- 📦 Буферизация логов
-- 🔗 Интеграция со стандартным `logging` модулем Python
-- 💪 Persistence: неотправленные логи сохраняются в SQLite
+**LogSend** is an asynchronous Python logger that stores logs in a local SQLite database and sends them to a Vector server via HTTP. Perfect for applications that require reliable log storage with guaranteed delivery.
 
-## Установка
+## Key Features
 
-### С GitHub
+- ✅ Asynchronous log delivery to Vector
+- ✅ Local disk-based log storage (SQLite)
+- ✅ Batch sending for network traffic optimization
+- ✅ Support for different log levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- ✅ Additional fields and context in each log
+- ✅ Automatic log queue management
 
-```bash
-pip install git+https://github.com/yourusername/logsend.git
-```
+## Installation
 
-### Локальная установка для разработки
+### From Source
 
 ```bash
-git clone https://github.com/yourusername/logsend.git
-cd logsend
 pip install -e .
 ```
 
-## Использование
+### With Development Dependencies
 
-### Основной API
+```bash
+pip install -e ".[dev]"
+```
+
+## Requirements
+
+- Python 3.8+
+- requests >= 2.25.0
+
+## Quick Start
 
 ```python
 from logsend import LogSend, LogLevel
 
-# Создание логера (project и table обязательны!)
+# Create a logger instance
 logger = LogSend(
-    vector_url="http://localhost:8080",  # URL Vector HTTP source
-    project="my-project",                 # Обязательно! Имя проекта
-    table="application_logs",             # Обязательно! Имя таблицы
-    db_path="./logs/queue.db",            # Путь к SQLite базе
-    batch_size=100,                       # Отправлять после 100 записей
-    flush_interval=5.0,                   # Или каждые 5 секунд
-    level=LogLevel.DEBUG,                 # Минимальный уровень логирования
-    extra_fields={                        # Дополнительные поля для всех логов
-        "environment": "production",
-        "version": "1.0.0"
-    }
+    vector_url="http://localhost:8080",
+    project="my-project",           # Required!
+    table="application_logs",       # Required!
+    db_path="./logs/queue.db",
+    batch_size=1000,
+    level=LogLevel.DEBUG,
+    extra_fields={"environment": "production", "version": "1.0.0"},
 )
 
-# Логирование
+# Log messages
 logger.debug("Debug message")
-logger.info("User logged in", extra={"user_id": 123, "ip": "192.168.1.1"})
-logger.warning("High memory usage", extra={"memory_percent": 85})
-logger.error("Database connection failed", extra={"host": "db.example.com"})
-logger.critical("System shutdown required")
+logger.info("Informational message")
+logger.warning("Warning message")
+logger.error("Error occurred", extra={"error_code": "E001"})
 
-# Проверить количество неотправленных логов
-print(f"Pending: {logger.pending_count()}")
-
-# Принудительная отправка
+# Send remaining logs
 logger.flush()
-
-# Закрытие (важно для отправки оставшихся логов)
-logger.close()
 ```
 
-### Context Manager
+## Usage
+
+### Basic Methods
+
+```python
+# Log at different levels
+logger.debug(message, extra=None)
+logger.info(message, extra=None)
+logger.warning(message, extra=None)
+logger.error(message, extra=None)
+logger.critical(message, extra=None)
+
+# Get count of pending logs
+pending = logger.pending_count()
+
+# Force send all logs
+logger.flush()
+```
+
+### Initialization Parameters
+
+| Parameter      | Type     | Description                    | Default         |
+|----------------|----------|--------------------------------|-----------------|
+| `vector_url`   |   str    | Vector server URL              |         -       |
+| `project`      |   str    | Project name (required)        |         -       |
+| `table`        |   str    | Table name (required)          |         -       |
+| `db_path`      |   str    | Path to database file          | `./logs.db`     |
+| `batch_size`   |   int    | Batch size for sending         | `1000`          |
+| `level`        | LogLevel | Logging level                  | `LogLevel.INFO` |
+| `extra_fields` |   dict   | Additional fields for all logs | `{}`            |
+
+## Examples
+
+### Example 1: Logging with Context
 
 ```python
 from logsend import LogSend
 
-with LogSend(
+logger = LogSend(
     vector_url="http://localhost:8080",
-    project="my-project",
-    table="app_logs",
-) as logger:
-    logger.info("Application started")
-    # ... ваш код ...
-    logger.info("Application finished")
-# Логи автоматически отправляются при выходе
-```
-
-### Интеграция со стандартным logging
-
-```python
-import logging
-from logsend import VectorHandler
-
-# Создание handler (project и table обязательны!)
-handler = VectorHandler(
-    vector_url="http://localhost:8080",
-    project="my-project",
-    table="app_logs",
-    db_path="./logs/queue.db",
-    batch_size=50,
-    flush_interval=10.0,
+    project="ecommerce",
+    table="events",
 )
 
-# Добавление к logger
-logger = logging.getLogger("my_app")
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
-# Использование как обычно
-logger.info("Hello from standard logging!")
-logger.error("Something went wrong", extra={"details": "error details"})
-
-# Закрытие при завершении
-handler.close()
+# Log event with additional information
+logger.info(
+    "User login successful",
+    extra={
+        "user_id": 12345,
+        "username": "john_doe",
+        "ip_address": "192.168.1.1",
+        "login_method": "oauth"
+    }
+)
 ```
 
-## Конфигурация Vector
+### Example 2: Error Handling
 
-Пример конфигурации Vector для приёма логов:
-
-```toml
-# vector.toml
-
-[sources.http_logs]
-type = "http_server"
-address = "0.0.0.0:8080"
-encoding = "json"
-
-[sinks.console]
-type = "console"
-inputs = ["http_logs"]
-encoding.codec = "json"
-
-[sinks.file]
-type = "file"
-inputs = ["http_logs"]
-path = "/var/log/vector/logs-%Y-%m-%d.json"
-encoding.codec = "json"
+```python
+try:
+    # Some code
+    result = perform_operation()
+except Exception as e:
+    logger.error(
+        "Operation failed",
+        extra={
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+            "operation": "perform_operation"
+        }
+    )
 ```
 
-Запуск Vector:
+## Project Structure
 
-```bash
-vector --config vector.toml
+```
+logsend/
+├── src/logsend/
+│   ├── __init__.py           # Main class exports
+│   ├── logger.py             # LogSend main class
+│   ├── sender.py             # Vector log sender
+│   └── disk_queue.py         # SQLite storage management
+├── examples/
+│   ├── basic_usage.py        # Usage example
+│   └── vector.toml           # Vector configuration
+├── pyproject.toml            # Project configuration
+└── README.md                 # This file
 ```
 
-## Параметры
+## License
 
-### LogSend
+MIT License
 
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|--------------|----------|
-| `vector_url` | str | обязательный | URL Vector HTTP endpoint |
-| `project` | str | обязательный | Имя проекта (включается в каждый лог) |
-| `table` | str | обязательный | Имя таблицы (включается в каждый лог) |
-| `db_path` | str | `"./logs/queue.db"` | Путь к SQLite базе для очереди |
-| `batch_size` | int | `100` | Количество логов для буферизации перед отправкой |
-| `flush_interval` | float | `5.0` | Интервал автоматической отправки (секунды) |
-| `max_retries` | int | `3` | Максимальное количество попыток при ошибке |
-| `retry_delay` | float | `1.0` | Задержка между попытками (секунды) |
-| `level` | LogLevel | `DEBUG` | Минимальный уровень логирования |
-| `extra_fields` | dict | `None` | Дополнительные поля для всех логов |
+## Author
 
-### VectorHandler
+Alex
 
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|--------------|----------|
-| `vector_url` | str | обязательный | URL Vector HTTP endpoint |
-| `project` | str | обязательный | Имя проекта |
-| `table` | str | обязательный | Имя таблицы |
-| `db_path` | str | `"./logs/queue.db"` | Путь к SQLite базе |
-| `batch_size` | int | `100` | Количество логов для буферизации |
-| `flush_interval` | float | `5.0` | Интервал автоматической отправки |
-| `max_retries` | int | `3` | Максимальное количество попыток |
-| `retry_delay` | float | `1.0` | Задержка между попытками |
-| `extra_fields` | dict | `None` | Дополнительные поля |
-| `level` | int | `NOTSET` | Минимальный уровень |
+## Links
 
-## Формат логов
-
-Логи отправляются в формате JSON (NDJSON):
-
-```json
-{
-  "timestamp": "2024-01-15T10:30:00.123Z",
-  "level": "INFO",
-  "level_num": 20,
-  "message": "User logged in",
-  "project": "my-project",
-  "table": "application_logs",
-  "extra": {
-    "user_id": 123,
-    "ip": "192.168.1.1"
-  },
-  "environment": "production",
-  "version": "1.0.0"
-}
-```
-
-## Лицензия
-
-MIT
+- [GitHub Repository](https://github.com/ink404dot/logsend)
+- [Vector Documentation](https://vector.dev/docs/)
