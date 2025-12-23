@@ -1,6 +1,9 @@
 """
 Basic usage example for LogSend.
+Always call logger.close() to release the SQLite connection.
 """
+
+from pathlib import Path
 
 from logsend import LogLevel, LogSend
 
@@ -12,6 +15,7 @@ def main():
         project="my-project",  # Required!
         table="application_logs",  # Required!
         db_path="./logs/queue.db",
+        log_dir=Path("./logs/logs_buffer"),
         batch_size=1000,  # Send after 1000 logs or 50 MB
         level=LogLevel.DEBUG,
         extra_fields={"environment": "development", "version": "1.0.0"},
@@ -48,7 +52,7 @@ def main():
         logger.flush()
 
     finally:
-        # Always close the logger
+        # Always close the logger to release resources
         logger.close()
 
 

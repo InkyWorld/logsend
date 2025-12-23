@@ -50,15 +50,21 @@ logger = LogSend(
     extra_fields={"environment": "production", "version": "1.0.0"},
 )
 
-# Log messages
-logger.debug("Debug message")
-logger.info("Informational message")
-logger.warning("Warning message")
-logger.error("Error occurred", extra={"error_code": "E001"})
+try:
+    # Log messages
+    logger.debug("Debug message")
+    logger.info("Informational message")
+    logger.warning("Warning message")
+    logger.error("Error occurred", extra={"error_code": "E001"})
 
-# Send remaining logs
-logger.flush()
+    # Send remaining logs
+    logger.flush()
+finally:
+    # Always close to release the SQLite connection
+    logger.close()
 ```
+
+> **Important:** Ensuring `logger.close()` is called (for example in a `finally` block) is mandatory so the underlying SQLite connection and background threads are cleaned up properly.
 
 ## Usage
 
@@ -77,6 +83,9 @@ pending = logger.pending_count()
 
 # Force send all logs
 logger.flush()
+
+# Always close the logger when shutting down your application
+logger.close()
 ```
 
 ### Initialization Parameters

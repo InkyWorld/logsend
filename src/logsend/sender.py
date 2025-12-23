@@ -2,7 +2,6 @@
 HTTP sender for Vector.
 """
 
-
 from typing import Dict, List, Optional
 
 import requests
@@ -20,6 +19,7 @@ class LogSender:
         vector_url: str,
         headers: Optional[Dict[str, str]] = None,
         timeout: float = 10.0,
+        session: Optional[requests.Session] = None,
     ):
         """
         Initialize LogSender.
@@ -27,18 +27,50 @@ class LogSender:
         Args:
             vector_url: URL of Vector HTTP endpoint
             headers: Additional headers to send with requests
+            timeout: Request timeout in seconds
+            session: Custom requests.Session to use (e.g., shared by application)
         """
         self.vector_url = vector_url.rstrip("/")
         self.headers = headers or {}
         self.timeout = timeout
-        # Session for connection pooling
-        self._session = requests.Session()
-        self._session.headers.update(
+        self._owns_session = session is None
+        self._session = (
+            self._build_session()
+            if session is None
+            else self._prepare_session(session)
+        )
+
+    def _build_session(self) -> requests.Session:
+        return self._prepare_session(requests.Session())
+
+    def _prepare_session(self, session: requests.Session) -> requests.Session:
+        # Ensure required headers while preserving caller-provided ones
+        session.headers.update(
             {
                 "Content-Type": "application/x-ndjson",
                 **self.headers,
             }
         )
+        return session
+
+    def reset_session(
+        self, new_session: Optional[requests.Session] = None
+    ) -> None:
+        """Replace the current HTTP session.
+
+        Passing ``new_session`` allows callers to swap in their own session
+        instance, otherwise a fresh internal session is created. Existing
+        internally-owned sessions are closed before replacement.
+        """
+        if self._owns_session and self._session:
+            self._session.close()
+
+        if new_session is not None:
+            self._session = self._prepare_session(new_session)
+            self._owns_session = False
+        else:
+            self._session = self._build_session()
+            self._owns_session = True
 
     def send_batch(self, messages: List[str]) -> bool:
         """
@@ -68,8 +100,12 @@ class LogSender:
             return False
 
         except requests.exceptions.RequestException:
+            if self._owns_session:
+                # Refresh internal session so future sends can recover cleanly
+                self.reset_session()
             return False
 
     def close(self) -> None:
         """Close the HTTP session."""
-        self._session.close()
+        if self._owns_session:
+            self._session.close()

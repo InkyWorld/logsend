@@ -4,7 +4,9 @@ Disk queue using SQLite for persistent log storage.
 
 import sqlite3
 import threading
-from typing import List
+from typing import Callable, List, Optional, TypeVar
+
+T = TypeVar("T")
 
 
 class DiskQueue:
@@ -20,9 +22,42 @@ class DiskQueue:
             db_path: Path to SQLite database file
         """
         self.db_path = db_path
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.lock = threading.Lock()
+        self.conn: Optional[sqlite3.Connection] = None
+        self._connect()
+
+    def _connect(self) -> None:
+        """Establish a SQLite connection and ensure schema is ready."""
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._init_db()
+
+    def _ensure_connection(self) -> None:
+        """Ensure there is an active SQLite connection."""
+        if self.conn is None:
+            self._connect()
+
+    def _reconnect(self) -> None:
+        """Drop the current connection and open a new one."""
+        if self.conn is not None:
+            try:
+                self.conn.close()
+            except sqlite3.Error:
+                pass
+        self.conn = None
+        self._connect()
+
+    def _run_with_retry(self, operation: Callable[[], T]) -> T:
+        """Run a DB operation, reopening the connection once if needed."""
+        last_exc: Optional[sqlite3.Error] = None
+        for _ in range(2):
+            self._ensure_connection()
+            try:
+                return operation()
+            except sqlite3.Error as exc:
+                last_exc = exc
+                self._reconnect()
+        assert last_exc is not None
+        raise last_exc
 
     def _init_db(self) -> None:
         """Initialize database schema."""
@@ -46,11 +81,18 @@ class DiskQueue:
         Args:
             message: JSON string to enqueue
         """
-        with self.lock:
-            self.conn.execute(
+
+        def operation() -> None:
+            conn = self.conn
+            if conn is None:
+                raise RuntimeError("Database connection unavailable")
+            conn.execute(
                 "INSERT INTO log_queue(message) VALUES (?)", (message,)
             )
-            self.conn.commit()
+            conn.commit()
+
+        with self.lock:
+            self._run_with_retry(operation)
 
     def enqueue_batch(self, messages: List[str]) -> None:
         """
@@ -61,12 +103,19 @@ class DiskQueue:
         """
         if not messages:
             return
-        with self.lock:
-            self.conn.executemany(
+
+        def operation() -> None:
+            conn = self.conn
+            if conn is None:
+                raise RuntimeError("Database connection unavailable")
+            conn.executemany(
                 "INSERT INTO log_queue(message) VALUES (?)",
                 [(m,) for m in messages],
             )
-            self.conn.commit()
+            conn.commit()
+
+        with self.lock:
+            self._run_with_retry(operation)
 
     def dequeue_batch(self, limit: int) -> List[str]:
         """
@@ -78,8 +127,12 @@ class DiskQueue:
         Returns:
             List of messages
         """
-        with self.lock:
-            cur = self.conn.execute(
+
+        def operation() -> List[str]:
+            conn = self.conn
+            if conn is None:
+                raise RuntimeError("Database connection unavailable")
+            cur = conn.execute(
                 "SELECT id, message FROM log_queue ORDER BY id ASC LIMIT ?",
                 (limit,),
             )
@@ -93,12 +146,15 @@ class DiskQueue:
 
             # Delete retrieved messages
             placeholders = ",".join("?" * len(ids))
-            self.conn.execute(
+            conn.execute(
                 f"DELETE FROM log_queue WHERE id IN ({placeholders})", ids
             )
-            self.conn.commit()
+            conn.commit()
 
             return messages
+
+        with self.lock:
+            return self._run_with_retry(operation)
 
     def peek_batch(self, limit: int) -> List[str]:
         """
@@ -110,12 +166,19 @@ class DiskQueue:
         Returns:
             List of messages
         """
-        with self.lock:
-            cur = self.conn.execute(
+
+        def operation() -> List[str]:
+            conn = self.conn
+            if conn is None:
+                raise RuntimeError("Database connection unavailable")
+            cur = conn.execute(
                 "SELECT message FROM log_queue ORDER BY id ASC LIMIT ?",
                 (limit,),
             )
             return [r[0] for r in cur.fetchall()]
+
+        with self.lock:
+            return self._run_with_retry(operation)
 
     def requeue(self, messages: List[str]) -> None:
         """
@@ -133,17 +196,33 @@ class DiskQueue:
         Returns:
             Queue size
         """
-        with self.lock:
-            cur = self.conn.execute("SELECT COUNT(*) FROM log_queue")
+
+        def operation() -> int:
+            conn = self.conn
+            if conn is None:
+                raise RuntimeError("Database connection unavailable")
+            cur = conn.execute("SELECT COUNT(*) FROM log_queue")
             return cur.fetchone()[0]
+
+        with self.lock:
+            return self._run_with_retry(operation)
 
     def clear(self) -> None:
         """Clear all messages from the queue."""
+
+        def operation() -> None:
+            conn = self.conn
+            if conn is None:
+                raise RuntimeError("Database connection unavailable")
+            conn.execute("DELETE FROM log_queue")
+            conn.commit()
+
         with self.lock:
-            self.conn.execute("DELETE FROM log_queue")
-            self.conn.commit()
+            self._run_with_retry(operation)
 
     def close(self) -> None:
         """Close the database connection."""
         with self.lock:
-            self.conn.close()
+            if self.conn is not None:
+                self.conn.close()
+                self.conn = None
