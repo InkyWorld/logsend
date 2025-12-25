@@ -61,8 +61,11 @@ class DiskQueue:
 
     def _init_db(self) -> None:
         """Initialize database schema."""
-        with self.conn:
-            self.conn.execute("""
+        conn = self.conn
+        if conn is None:
+            raise RuntimeError("Database connection unavailable")
+        with conn:
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS log_queue (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     message TEXT NOT NULL,
@@ -70,7 +73,7 @@ class DiskQueue:
                 )
             """)
             # Index for faster ordering
-            self.conn.execute("""
+            conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_log_queue_id ON log_queue(id)
             """)
 

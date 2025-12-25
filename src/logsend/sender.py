@@ -5,6 +5,7 @@ HTTP sender for Vector.
 from typing import Dict, List, Optional
 
 import requests
+from requests.auth import HTTPBasicAuth
 
 
 class LogSender:
@@ -20,6 +21,8 @@ class LogSender:
         headers: Optional[Dict[str, str]] = None,
         timeout: float = 10.0,
         session: Optional[requests.Session] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
     ):
         """
         Initialize LogSender.
@@ -29,10 +32,14 @@ class LogSender:
             headers: Additional headers to send with requests
             timeout: Request timeout in seconds
             session: Custom requests.Session to use (e.g., shared by application)
+            username: Optional username for Basic Auth
+            password: Optional password for Basic Auth
         """
         self.vector_url = vector_url.rstrip("/")
         self.headers = headers or {}
         self.timeout = timeout
+        self.username = username
+        self.password = password
         self._owns_session = session is None
         self._session = (
             self._build_session()
@@ -51,6 +58,9 @@ class LogSender:
                 **self.headers,
             }
         )
+        # Set up Basic Auth if credentials provided
+        if self.username and self.password:
+            session.auth = HTTPBasicAuth(self.username, self.password)
         return session
 
     def reset_session(

@@ -99,8 +99,8 @@ logger.close()
 | `db_path`      |   str    | Path to database file                    | `./logs/queue.db` |
 | `batch_size`   |   int    | Batch size for sending                   | `5000`          |
 | `level`        | LogLevel | Logging level                            | `LogLevel.DEBUG`|
-| `extra_fields` |   dict   | Additional fields for all logs           | `{}`            |
-
+| `extra_fields` |   dict   | Additional fields for all logs           | `{}`            || `username`     |   str    | Optional username for Basic Auth         | `None`          |
+| `password`     |   str    | Optional password for Basic Auth         | `None`          |
 ## Examples
 
 ### Example 1: Logging with Context
@@ -141,6 +141,23 @@ except Exception as e:
             "operation": "perform_operation"
         }
     )
+```
+
+### Example 3: Basic Authentication
+
+```python
+from logsend import LogSend
+
+logger = LogSend(
+    vector_url="http://vector.example.com:8080",
+    project="secure-app",
+    table="application_logs",
+    username="admin",           # Optional Basic Auth username
+    password="secure_password"   # Optional Basic Auth password
+)
+
+logger.info("Authenticated logging is working")
+logger.close()
 ```
 
 ## Project Structure
