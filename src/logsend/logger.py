@@ -163,7 +163,7 @@ class LogSend:
         else:
             # message is a dict (JSONObject)
             entry = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                 **message,
                 "project": self.project,
                 "table": self.table,
