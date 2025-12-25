@@ -74,6 +74,8 @@ class LogSend:
         batch_size: int = 5000,
         flush_interval: float = 30.0,
         level: LogLevel = LogLevel.DEBUG,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
         extra_fields: Optional[Dict[str, Any]] = None,
     ):
         """
@@ -86,6 +88,8 @@ class LogSend:
             batch_size: Maximum number of logs to send per batch (default: 5000)
             flush_interval: Seconds between automatic flushes
             level: Minimum log level to process
+            username: Optional username for Basic Auth
+            password: Optional password for Basic Auth
             extra_fields: Extra fields to include in every log entry
         """
         if not project:
@@ -112,7 +116,7 @@ class LogSend:
 
         # HTTP sender
         self._sender = LogSender(
-            vector_url=vector_url,
+            vector_url=vector_url, username=username, password=password
         )
 
         # Flush timer thread
