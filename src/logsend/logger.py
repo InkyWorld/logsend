@@ -134,7 +134,7 @@ class LogSend:
     ) -> Dict[str, Any]:
         """Create a log entry dictionary."""
         entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
             "message": message,
             "project": self.project,
             "table": self.table,
