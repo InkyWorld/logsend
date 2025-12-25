@@ -71,7 +71,6 @@ class LogSend:
         project: str,
         table: str,
         log_dir: Path,
-        db_path: str = "./logs/queue.db",
         batch_size: int = 5000,
         flush_interval: float = 30.0,
         level: LogLevel = LogLevel.DEBUG,
@@ -84,7 +83,6 @@ class LogSend:
             vector_url: URL of Vector HTTP endpoint
             project: Project name (required, included in every log)
             table: Table name (required, included in every log)
-            db_path: Path to SQLite database file for queue storage
             batch_size: Maximum number of logs to send per batch (default: 5000)
             flush_interval: Seconds between automatic flushes
             level: Minimum log level to process
@@ -100,7 +98,6 @@ class LogSend:
         self.vector_url = vector_url
         self.project = project
         self.table = table
-        self.db_path = db_path
         self.batch_size = batch_size
         self.flush_interval = flush_interval
         self.level = level
