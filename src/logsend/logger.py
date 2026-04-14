@@ -121,10 +121,15 @@ class LogSend:
 
         # Flush timer thread
         self._stop_event = threading.Event()
+        self._flush_event = threading.Event()
         self._flush_thread = threading.Thread(
             target=self._flush_loop, daemon=True
         )
+        self._sender_thread = threading.Thread(
+            target=self._sender_loop, daemon=True
+        )
         self._flush_thread.start()
+        self._sender_thread.start()
 
     def _create_log_entry(
         self,
@@ -181,14 +186,24 @@ class LogSend:
 
     def _flush_buffer(self) -> None:
         """Flush logs from queue and try to send."""
-        # Try to send from queue in background
-        threading.Thread(target=self._send_from_queue, daemon=True).start()
+        # Signal the single sender worker to drain the queue.
+        self._flush_event.set()
+
+    def _sender_loop(self) -> None:
+        """Background thread that sends queued logs when signaled."""
+        while not self._stop_event.is_set():
+            if self._flush_event.wait(timeout=0.5):
+                self._flush_event.clear()
+                self._send_from_queue()
+
+        # Final drain during shutdown.
+        self._send_from_queue()
 
     def _send_from_queue(self) -> None:
         """Send logs from queue to Vector."""
         while True:
             # Get a batch, but ensure it doesn't exceed 50 MB
-            batch = []
+            batch: List[str] = []
             batch_size_bytes = 0
 
             # Peek at messages and build batch respecting size limit
@@ -220,7 +235,7 @@ class LogSend:
         while not self._stop_event.is_set():
             self._stop_event.wait(self.flush_interval)
             if not self._stop_event.is_set():
-                self._flush_buffer()
+                self._flush_event.set()
 
     def debug(
         self, message: str, extra: Optional[Dict[str, Any]] = None
@@ -269,10 +284,9 @@ class LogSend:
     def close(self) -> None:
         """Close the logger and flush remaining logs."""
         self._stop_event.set()
+        self._flush_event.set()
         self._flush_thread.join(timeout=2.0)
-
-        # Try to send remaining logs
-        self._send_from_queue()
+        self._sender_thread.join(timeout=2.0)
 
         # Close resources
         self._queue.close()

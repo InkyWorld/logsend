@@ -29,6 +29,11 @@ class DiskQueue:
     def _connect(self) -> None:
         """Establish a SQLite connection and ensure schema is ready."""
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        # Pragmas tuned for queue-like workload: better write throughput,
+        # reduced fsync overhead, and fewer temporary disk allocations.
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA synchronous=NORMAL")
+        self.conn.execute("PRAGMA temp_store=MEMORY")
         self._init_db()
 
     def _ensure_connection(self) -> None:
